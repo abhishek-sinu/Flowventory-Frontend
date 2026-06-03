@@ -1,0 +1,179 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+	Prevent the whole page from scrolling sideways on mobile.
+	Only inner table wrappers (overflow-auto) should scroll horizontally;
+	the page shell itself must stay locked to the viewport width.
+*/
+html, body, #root {
+	max-width: 100%;
+	overflow-x: hidden;
+}
+
+/*
+	Theme remap: replace legacy green accents with a unique, professional
+	"Indigo Aurora" brand palette (indigo primary + teal accent).
+*/
+:root {
+	--brand-primary: #4f46e5;
+	--brand-primary-dark: #3730a3;
+	--brand-primary-soft: #eef2ff;
+	--brand-accent: #0d9488;
+	--brand-accent-dark: #0f766e;
+	--brand-focus: rgba(79, 70, 229, 0.34);
+}
+
+@layer utilities {
+	.bg-green-50 { background-color: var(--brand-primary-soft) !important; }
+	.bg-green-100 { background-color: #e0e7ff !important; }
+	.bg-green-600 { background-color: var(--brand-primary) !important; }
+	.bg-green-700 { background-color: var(--brand-primary-dark) !important; }
+
+	.text-green-100 { color: #dbe1ff !important; }
+	.text-green-200 { color: #c3c9ff !important; }
+	.text-green-600 { color: var(--brand-primary) !important; }
+	.text-green-700 { color: var(--brand-primary-dark) !important; }
+	.text-green-800 { color: #312e81 !important; }
+
+	.border-green-200 { border-color: #c7d2fe !important; }
+	.border-green-500 { border-color: var(--brand-primary) !important; }
+
+	.ring-green-500,
+	.focus\:ring-green-500:focus {
+		--tw-ring-color: var(--brand-focus) !important;
+	}
+
+	.focus\:border-green-500:focus {
+		border-color: var(--brand-primary) !important;
+	}
+
+	.hover\:bg-green-700:hover { background-color: var(--brand-primary-dark) !important; }
+	.hover\:text-green-700:hover { color: var(--brand-primary-dark) !important; }
+	.hover\:text-green-800:hover { color: #272275 !important; }
+
+	.from-green-500 {
+		--tw-gradient-from: var(--brand-primary) var(--tw-gradient-from-position) !important;
+		--tw-gradient-to: rgba(79, 70, 229, 0) var(--tw-gradient-to-position) !important;
+		--tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to) !important;
+	}
+
+	.to-emerald-600 {
+		--tw-gradient-to: var(--brand-accent) var(--tw-gradient-to-position) !important;
+	}
+}
+
+/*
+	Professional data-table styling.
+	Applies to the app's data tables (those using the `min-w-full` class)
+	without touching small inline tables elsewhere.
+*/
+table.min-w-full thead th {
+	background: linear-gradient(180deg, #eef2ff 0%, #e7eaff 100%);
+	color: #3730a3;
+	border-bottom: 2px solid #c7d2fe;
+	letter-spacing: 0.05em;
+}
+
+table.min-w-full tbody tr {
+	transition: background-color 0.15s ease;
+}
+
+table.min-w-full tbody tr:nth-child(even) {
+	background-color: #f8faff;
+}
+
+/* Teal-tinted hover keeps rows feeling interactive and on-brand */
+table.min-w-full tbody tr:hover {
+	background-color: #ecfdf9 !important;
+}
+
+table.min-w-full tbody td {
+	border-top: 1px solid #eef1f8;
+}
+
+/*
+	Polished form controls for search/filter fields.
+	Soft indigo-tinted fill that brightens to white on focus,
+	with a gentle indigo focus glow for a professional feel.
+*/
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="date"],
+input:not([type]),
+select,
+textarea {
+	background-color: #f7f8fc;
+	transition: background-color 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+input[type="text"]:hover,
+input[type="search"]:hover,
+input[type="email"]:hover,
+input[type="number"]:hover,
+input[type="date"]:hover,
+select:hover,
+textarea:hover {
+	border-color: #c7d2fe;
+}
+
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="number"]:focus,
+input[type="date"]:focus,
+input:not([type]):focus,
+select:focus,
+textarea:focus {
+	background-color: #ffffff;
+	border-color: var(--brand-primary);
+	box-shadow: 0 0 0 3px var(--brand-focus);
+}
+
+/*
+	Search icon inside the list/report search fields.
+	Targets the shared search wrapper (`min-w-[220px] flex-1`).
+*/
+.min-w-\[220px\].flex-1 input {
+	padding-left: 2.25rem;
+	background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236366f1' stroke-width='2'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' d='M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z'/%3E%3C/svg%3E");
+	background-repeat: no-repeat;
+	background-position: 0.65rem center;
+	background-size: 1rem 1rem;
+}
+
+/*
+	Mobile responsiveness safety nets.
+	Keep dense tables readable and scrollable, let filter/search
+	fields go full-width, and tame oversized headings on phones.
+*/
+@media (max-width: 640px) {
+	/* Tighter table cells so more columns stay visible before scrolling */
+	table.min-w-full thead th,
+	table.min-w-full tbody td {
+		padding-left: 0.5rem;
+		padding-right: 0.5rem;
+		font-size: 0.8125rem;
+	}
+
+	/* Search / filter inputs stretch to full width when they wrap */
+	.min-w-\[220px\].flex-1,
+	.min-w-\[180px\] {
+		min-width: 100% !important;
+	}
+
+	/* Prevent very large page titles from overflowing */
+	h1.text-2xl { font-size: 1.375rem; }
+	h1.text-3xl { font-size: 1.6rem; }
+}
+
+/* Mermaid workflow diagram scrolls horizontally on small screens */
+.mermaid-diagram svg {
+	max-width: none;
+	height: auto;
+}
