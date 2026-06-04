@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import DashboardLayout from './DashboardLayout';
 
 function round2(value) {
@@ -39,6 +40,15 @@ function CreateInvoice() {
 	const [roundOff, setRoundOff] = useState('0');
 	const [notes, setNotes] = useState('');
 	const [lines, setLines] = useState([{ ...EMPTY_LINE }]);
+	const [scanCode, setScanCode] = useState('');
+	const [scanError, setScanError] = useState('');
+	const [scanning, setScanning] = useState(false);
+	const [cameraOpen, setCameraOpen] = useState(false);
+	const [cameraError, setCameraError] = useState('');
+	const [cameraStarting, setCameraStarting] = useState(false);
+	const [lastScanned, setLastScanned] = useState('');
+	const cameraRef = useRef(null);
+	const lastCodeRef = useRef({ code: '', at: 0 });
 	const defaultUnitCode = useMemo(() => {
 		if (!units.length) return 'pcs';
 		const firstActive = units.find((u) => Number(u.is_active) === 1);
@@ -240,6 +250,160 @@ function CreateInvoice() {
 	const addLine = () => setLines((prev) => [...prev, { ...EMPTY_LINE }]);
 	const removeLine = (index) => setLines((prev) => prev.filter((_, i) => i !== index));
 
+	const addItemToLines = (item) => {
+		setLines((prev) => {
+			const existingIndex = prev.findIndex((l) => String(l.item_id) === String(item.id));
+			if (existingIndex >= 0) {
+				const next = [...prev];
+				const qty = Math.max(1, Math.trunc(Number(next[existingIndex].quantity) || 0)) + 1;
+				next[existingIndex] = { ...next[existingIndex], quantity: String(qty) };
+				return next;
+			}
+
+			const newLine = {
+				...EMPTY_LINE,
+				item_id: String(item.id),
+				rate: String(item.sale_price ?? '0'),
+				gst_percent: String(item.gst_percent ?? '0'),
+			};
+			// Reuse the first blank line if present, otherwise append.
+			const blankIndex = prev.findIndex((l) => !l.item_id);
+			if (blankIndex >= 0) {
+				const next = [...prev];
+				next[blankIndex] = newLine;
+				return next;
+			}
+			return [...prev, newLine];
+		});
+	};
+
+	const lookupAndAddByCode = async (rawCode) => {
+		const code = String(rawCode || '').trim();
+		if (!code) return null;
+		const res = await fetch(`${API_URL}/api/items/by-barcode/${encodeURIComponent(code)}`, {
+			headers: { Authorization: `Bearer ${token}` },
+		});
+		if (!res.ok) {
+			// The by-barcode route returns 404 when no item matches the scanned code.
+			if (res.status === 404) {
+				throw new Error(`No item found for barcode "${code}".`);
+			}
+			const msg = await buildHttpErrorMessage(res, 'Barcode lookup failed');
+			throw new Error(msg);
+		}
+		const item = await res.json();
+		addItemToLines(item);
+		return item;
+	};
+
+	const handleBarcodeScan = async (e) => {
+		e.preventDefault();
+		const code = scanCode.trim();
+		if (!code) return;
+		setScanError('');
+		setScanning(true);
+		try {
+			await lookupAndAddByCode(code);
+			setScanCode('');
+		} catch (err) {
+			setScanError(err.message || 'Barcode lookup failed');
+		} finally {
+			setScanning(false);
+		}
+	};
+
+	const stopCamera = async () => {
+		const instance = cameraRef.current;
+		cameraRef.current = null;
+		if (instance) {
+			try {
+				await instance.stop();
+			} catch (_) {
+				/* already stopped */
+			}
+			try {
+				instance.clear();
+			} catch (_) {
+				/* ignore */
+			}
+		}
+		setCameraOpen(false);
+		setCameraStarting(false);
+	};
+
+	const handleCameraDetected = async (decodedText) => {
+		const code = String(decodedText || '').trim();
+		if (!code) return;
+		// Debounce repeated reads of the same code within 1.5s.
+		const now = Date.now();
+		if (lastCodeRef.current.code === code && now - lastCodeRef.current.at < 1500) return;
+		lastCodeRef.current = { code, at: now };
+		try {
+			const item = await lookupAndAddByCode(code);
+			if (item) {
+				setCameraError('');
+				setLastScanned(`Added: ${item.name}`);
+			}
+		} catch (err) {
+			setCameraError(err.message || 'No item found for this barcode');
+		}
+	};
+
+	const openCamera = async () => {
+		setScanError('');
+		setCameraError('');
+		setLastScanned('');
+		setCameraOpen(true);
+		setCameraStarting(true);
+		// Wait for the modal container to mount before starting the camera.
+		setTimeout(async () => {
+			try {
+				const html5Qrcode = new Html5Qrcode('barcode-camera-region', {
+					formatsToSupport: [
+						Html5QrcodeSupportedFormats.CODE_128,
+						Html5QrcodeSupportedFormats.CODE_39,
+						Html5QrcodeSupportedFormats.EAN_13,
+						Html5QrcodeSupportedFormats.EAN_8,
+						Html5QrcodeSupportedFormats.UPC_A,
+						Html5QrcodeSupportedFormats.UPC_E,
+						Html5QrcodeSupportedFormats.QR_CODE,
+					],
+					verbose: false,
+				});
+				cameraRef.current = html5Qrcode;
+				await html5Qrcode.start(
+					{ facingMode: 'environment' },
+					{ fps: 10, qrbox: { width: 250, height: 150 } },
+					handleCameraDetected,
+					() => { /* per-frame decode failures are normal; ignore */ }
+				);
+				setCameraStarting(false);
+			} catch (err) {
+				cameraRef.current = null;
+				setCameraStarting(false);
+				const message = String(err?.message || err || '');
+				if (/NotAllowedError|Permission/i.test(message)) {
+					setCameraError('Camera permission was denied. Please allow camera access and try again.');
+				} else if (/NotFoundError|no camera|Requested device not found/i.test(message)) {
+					setCameraError('No camera was found on this device.');
+				} else if (/secure|https/i.test(message)) {
+					setCameraError('Camera needs a secure (HTTPS) connection. It works on localhost during development.');
+				} else {
+					setCameraError(message || 'Unable to start the camera.');
+				}
+			}
+		}, 150);
+	};
+
+	useEffect(() => {
+		return () => {
+			const instance = cameraRef.current;
+			if (instance) {
+				instance.stop().catch(() => {});
+			}
+		};
+	}, []);
+
 	const getLineUnit = (line) => {
 		const selected = items.find((it) => String(it.id) === String(line.item_id));
 		return String(selected?.unit || defaultUnitCode || 'pcs');
@@ -355,10 +519,30 @@ function CreateInvoice() {
 				</div>
 
 				<div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-					<div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+					<div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
 						<h2 className="text-sm font-semibold text-gray-700">Line Items</h2>
-						<button type="button" onClick={addLine} className="text-sm font-semibold text-green-700 hover:text-green-800">+ Add Line</button>
+						<div className="flex items-center gap-2">
+							<div className="flex items-center gap-2">
+								<input
+									value={scanCode}
+									onChange={(e) => { setScanCode(e.target.value); if (scanError) setScanError(''); }}
+									onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleBarcodeScan(e); } }}
+									placeholder="Scan or type barcode, press Enter"
+									className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-56 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+								/>
+								<button type="button" onClick={handleBarcodeScan} disabled={scanning} className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
+									{scanning ? 'Adding…' : 'Add'}
+								</button>
+								<button type="button" onClick={openCamera} title="Scan with device camera" className="px-3 py-1.5 rounded-lg border border-green-600 text-green-700 text-sm font-semibold hover:bg-green-50">
+									📷 Camera
+								</button>
+							</div>
+							<button type="button" onClick={addLine} className="text-sm font-semibold text-green-700 hover:text-green-800">+ Add Line</button>
+						</div>
 					</div>
+					{scanError && (
+						<div className="px-4 py-2 text-xs text-red-600 bg-red-50 border-b border-red-100">{scanError}</div>
+					)}
 					<div className="overflow-auto">
 						<table className="min-w-full text-sm">
 							<thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
@@ -431,6 +615,38 @@ function CreateInvoice() {
 					</button>
 				</div>
 			</form>
+
+			{cameraOpen && (
+				<div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+					<div className="bg-white w-full max-w-md rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+						<div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+							<h3 className="font-semibold text-gray-800">Scan Barcode With Camera</h3>
+							<button type="button" onClick={stopCamera} className="text-gray-400 hover:text-gray-700">Close</button>
+						</div>
+						<div className="p-4 space-y-3">
+							<div className="relative w-full rounded-lg overflow-hidden bg-black/5 min-h-[220px]">
+								{/* This div is owned entirely by html5-qrcode. React must NOT render children inside it. */}
+								<div id="barcode-camera-region" className="w-full" />
+								{cameraStarting && (
+									<span className="absolute inset-0 flex items-center justify-center text-sm text-gray-500 pointer-events-none">
+										Starting camera…
+									</span>
+								)}
+							</div>
+							{cameraError && (
+								<div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{cameraError}</div>
+							)}
+							{lastScanned && !cameraError && (
+								<div className="rounded-lg border border-green-200 bg-green-50 px-3 py-2 text-xs text-green-700">{lastScanned}</div>
+							)}
+							<p className="text-xs text-gray-500">Point the camera at a barcode. Items are added automatically as they are scanned. Keep scanning, then click Done.</p>
+							<div className="flex justify-end">
+								<button type="button" onClick={stopCamera} className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700">Done</button>
+							</div>
+						</div>
+					</div>
+				</div>
+			)}
 		</DashboardLayout>
 	);
 }

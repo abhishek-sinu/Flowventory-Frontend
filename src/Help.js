@@ -7,6 +7,7 @@ const HELP_TABS = [
   { key: 'workflow', label: 'Business Flow' },
   { key: 'terms', label: 'Key Terms' },
   { key: 'items', label: 'Items Guide' },
+  { key: 'barcode', label: 'Barcode Guide' },
   { key: 'parties', label: 'Parties Guide' },
   { key: 'settings', label: 'Settings Guide' },
   { key: 'invoice', label: 'Invoice Policy' },
@@ -70,6 +71,47 @@ const WORKFLOW_CHART = `flowchart TD
   classDef sale fill:#ecfdf5,stroke:#0d9488,stroke-width:1.5px,color:#065f46;
   classDef buy fill:#fff1f2,stroke:#e11d48,stroke-width:1.5px,color:#9f1239;
   classDef report fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+`;
+
+const BARCODE_CHART = `flowchart TD
+  Start(["Start"]):::startNode --> AddItem
+
+  subgraph Setup["1 . One-Time Setup"]
+    direction TB
+    AddItem["Add / Edit Item"]:::setup --> Choice{"Enter barcode?"}:::decision
+    Choice -- "Leave blank" --> Auto["System auto-generates<br/>Code128 (FLV + id)"]:::setup
+    Choice -- "Type / paste" --> Manual["Use printed barcode<br/>on the product"]:::setup
+    Auto --> Saved["Barcode saved on item"]:::setup
+    Manual --> Saved
+    Saved --> NeedLabel{"Product has no<br/>printed barcode?"}:::decision
+    NeedLabel -- "Yes" --> PrintLbl["Print label sticker<br/>(roll or A4)"]:::setup
+    NeedLabel -- "No" --> SkipLbl["Use existing label"]:::setup
+  end
+
+  Saved --> Billing
+
+  subgraph Billing["2 . Daily Billing"]
+    direction TB
+    Open["Open New Sale Invoice"]:::sale --> Method{"How to scan?"}:::decision
+    Method -- "USB scanner / type + Enter" --> Scan["Barcode entered"]:::sale
+    Method -- "📷 Device camera" --> Cam["Camera reads barcode"]:::sale
+    Scan --> Lookup{"Item found?"}:::decision
+    Cam --> Lookup
+    Lookup -- "Yes, new" --> AddLine["Item added as a line"]:::sale
+    Lookup -- "Yes, already on bill" --> BumpQty["Quantity +1"]:::sale
+    Lookup -- "No match" --> ErrMsg["Shows: no item for barcode"]:::buy
+    AddLine --> NextScan["Scan next item"]:::sale
+    BumpQty --> NextScan
+  end
+
+  NextScan --> Finish(["Save Invoice"]):::endNode
+
+  classDef startNode fill:#4f46e5,stroke:#3730a3,stroke-width:2px,color:#ffffff,font-weight:bold;
+  classDef endNode fill:#0d9488,stroke:#0f766e,stroke-width:2px,color:#ffffff,font-weight:bold;
+  classDef setup fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81;
+  classDef sale fill:#ecfdf5,stroke:#0d9488,stroke-width:1.5px,color:#065f46;
+  classDef buy fill:#fff1f2,stroke:#e11d48,stroke-width:1.5px,color:#9f1239;
+  classDef decision fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
 `;
 
 let mermaidReady = false;
@@ -307,6 +349,7 @@ function Help() {
           <ol className="list-decimal pl-5 mt-3 space-y-2 text-sm text-gray-700">
             <li>Open Inventory and click Add Item.</li>
             <li>Enter item name and unique SKU.</li>
+            <li>Optionally enter a Barcode, or leave it blank to auto-generate one.</li>
             <li>Fill category, unit, HSN code, and GST percentage.</li>
             <li>Enter sale price and purchase price.</li>
             <li>Set opening stock, current stock, and low stock threshold.</li>
@@ -335,6 +378,71 @@ function Help() {
             <li>Enter quantity and reason.</li>
             <li>Submit to update current stock and keep audit history.</li>
           </ol>
+        </div>
+      </div>
+    ),
+    barcode: (
+      <div className="space-y-4">
+        <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-4">
+          <h3 className="text-base font-semibold text-indigo-800">Barcode System</h3>
+          <p className="text-sm text-indigo-700 mt-1">Barcodes let you add items to an invoice instantly by scanning instead of searching. Every item can have a unique barcode — either the one printed on the product, or one Flowventory generates for you automatically.</p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <h3 className="font-semibold text-gray-800 mb-2">How The Barcode System Works</h3>
+          <p className="text-sm text-gray-600 mb-3">This diagram shows the full flow — from setting a barcode on an item once, to scanning it during daily billing. Follow the arrows at each stage.</p>
+          <MermaidDiagram chart={BARCODE_CHART} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+            <h4 className="text-sm font-semibold text-indigo-800">1 . Set A Barcode On The Item</h4>
+            <p className="text-xs text-indigo-700 mt-1">When adding or editing an item, type/paste the product's printed barcode, or leave the field blank. If blank, Flowventory auto-generates a Code128 barcode (FLV + item id).</p>
+          </div>
+          <div className="rounded-xl border border-teal-100 bg-teal-50 p-3">
+            <h4 className="text-sm font-semibold text-teal-800">2 . Scan While Billing</h4>
+            <p className="text-xs text-teal-700 mt-1">On a new Sale Invoice, use the barcode box above Line Items. Scan with a USB scanner, type the code and press Enter, or click 📷 Camera to scan with your laptop/phone camera — the item is added automatically.</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4 bg-white">
+          <h3 className="font-semibold text-gray-800">Three Ways To Scan</h3>
+          <ol className="list-decimal pl-5 mt-3 space-y-2 text-sm text-gray-700">
+            <li><span className="font-semibold">USB barcode scanner</span> — plug-and-play; it types the code and adds the item instantly. Best for a busy counter.</li>
+            <li><span className="font-semibold">Type manually</span> — enter the code in the barcode box and press Enter. No hardware needed.</li>
+            <li><span className="font-semibold">Device camera</span> — click 📷 Camera to use your laptop webcam or phone camera. Point it at the barcode and items are added as they are read.</li>
+          </ol>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4 bg-white">
+          <h3 className="font-semibold text-gray-800">How To Use Barcodes (Step By Step)</h3>
+          <ol className="list-decimal pl-5 mt-3 space-y-2 text-sm text-gray-700">
+            <li>Open Inventory → Add or Edit an item.</li>
+            <li>Enter a Barcode, or leave it blank to auto-generate one.</li>
+            <li>Save the item. The barcode now shows in the items list and is searchable.</li>
+            <li>Open a new Sale Invoice from the Sales section.</li>
+            <li>Click into the "Scan or type barcode" box above Line Items.</li>
+            <li>Scan the product (or type the code) and press Enter — or click 📷 Camera to scan with your device camera.</li>
+            <li>The matching item is added as a line; scanning the same item again increases its quantity by one.</li>
+            <li>Continue scanning the rest of the items, then save the invoice.</li>
+          </ol>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 p-4 bg-white">
+          <h3 className="font-semibold text-gray-800">Print Barcode Labels</h3>
+          <p className="text-xs text-gray-500 mt-1">For products with no manufacturer barcode (your own or loose goods), print sticker labels using the auto-generated code, then stick them on the product.</p>
+          <ol className="list-decimal pl-5 mt-3 space-y-2 text-sm text-gray-700">
+            <li>Go to Inventory → Items.</li>
+            <li>Print one item: click <span className="font-semibold">Label</span> in its row. Print many: tick the checkboxes (or “select all”) and click <span className="font-semibold">🏷️ Print Labels</span> at the top.</li>
+            <li>In the popup choose the <span className="font-semibold">label size</span> — a label roll (50mm × 25mm) or an A4 sheet (grid of labels).</li>
+            <li>Set <span className="font-semibold">copies per item</span>, and toggle what to show: item name (on), price (off), SKU (off).</li>
+            <li>Check the live <span className="font-semibold">preview</span>, then click <span className="font-semibold">Print</span> and pick your printer.</li>
+          </ol>
+          <p className="text-xs text-gray-500 mt-3">Works with a normal printer + A4 label sheets, or a dedicated label printer (Zebra/TVS/TSC). Tip: keep price off the sticker if your prices change often — the billing price always comes from the item master, not the label.</p>
+        </div>
+
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          You do not need special hardware to test this — typing a barcode and pressing Enter works exactly like a scanner, and the camera option uses your existing laptop/phone camera. Any USB barcode scanner also works automatically because it behaves like a keyboard. Note: camera scanning needs camera permission and a secure (HTTPS) connection — it works on localhost during development. For label printing, allow pop-ups so the print window can open. Barcodes are unique: duplicates are rejected with a clear error.
         </div>
       </div>
     ),
@@ -691,6 +799,7 @@ function Help() {
             <li>Reports API/UI: GST report with GSTR-1 outward summary, GSTR-3B liability vs ITC, and month-wise tax movement.</li>
             <li>Reports API/UI: Party Ledger report with opening balance, increase/decrease totals, and running voucher-wise statement.</li>
             <li>Settings API/UI: Company profile, tax rates, units, and bank accounts setup with add/edit/delete workflows.</li>
+            <li>Barcode support: unique item barcodes with auto-generate, barcode search, scan-to-add on sale invoices via USB scanner, manual entry, or device camera (laptop/phone), and printable barcode label stickers (roll or A4).</li>
             <li>Sales/Purchase forms: invoice, estimate, delivery challan, credit note, purchase bill, and debit note line items now load GST preset suggestions and unit fallback from configured settings masters.</li>
             <li>Low-stock KPI wired to items table.</li>
           </ul>

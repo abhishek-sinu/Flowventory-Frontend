@@ -1,9 +1,11 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import JsBarcode from 'jsbarcode';
 import DashboardLayout from './DashboardLayout';
 
 const EMPTY_FORM = {
 	name: '',
 	sku: '',
+	barcode: '',
 	category: '',
 	unit: 'pcs',
 	hsn_code: '',
@@ -43,7 +45,12 @@ function Items() {
 	const [adjustForm, setAdjustForm] = useState({ direction: 'in', quantity: '1', reason: 'manual_adjustment' });
 	const [adjusting, setAdjusting] = useState(false);
 	const [importing, setImporting] = useState(false);
+	const [selectedIds, setSelectedIds] = useState(() => new Set());
+	const [labelModalOpen, setLabelModalOpen] = useState(false);
+	const [labelTargets, setLabelTargets] = useState([]);
+	const [labelOpts, setLabelOpts] = useState({ size: 'roll', showName: true, showPrice: false, showSku: false, copies: 1 });
 	const fileInputRef = useRef(null);
+	const labelPreviewRef = useRef(null);
 
 	const token = localStorage.getItem('token');
 
@@ -114,6 +121,7 @@ function Items() {
 		setForm({
 			name: item.name || '',
 			sku: item.sku || '',
+			barcode: item.barcode || '',
 			category: item.category || '',
 			unit: item.unit || 'pcs',
 			hsn_code: item.hsn_code || '',
@@ -375,6 +383,126 @@ function Items() {
 		fetchItems(1);
 	};
 
+	// ---------- Barcode label printing ----------
+	const toggleSelected = (id) => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (next.has(id)) next.delete(id);
+			else next.add(id);
+			return next;
+		});
+	};
+
+	const allOnPageSelected = items.length > 0 && items.every((it) => selectedIds.has(it.id));
+
+	const toggleSelectAllOnPage = () => {
+		setSelectedIds((prev) => {
+			const next = new Set(prev);
+			if (allOnPageSelected) {
+				items.forEach((it) => next.delete(it.id));
+			} else {
+				items.forEach((it) => next.add(it.id));
+			}
+			return next;
+		});
+	};
+
+	const openLabelModal = (targets) => {
+		const list = (targets || []).filter(Boolean);
+		if (list.length === 0) {
+			setError('Select at least one item to print labels.');
+			return;
+		}
+		const missing = list.filter((it) => !it.barcode);
+		if (missing.length === list.length) {
+			setError('Selected item(s) have no barcode yet. Edit and save the item to auto-generate one first.');
+			return;
+		}
+		setError('');
+		setLabelTargets(list.filter((it) => it.barcode));
+		setLabelOpts({ size: 'roll', showName: true, showPrice: false, showSku: false, copies: 1 });
+		setLabelModalOpen(true);
+	};
+
+	const closeLabelModal = () => {
+		setLabelModalOpen(false);
+		setLabelTargets([]);
+	};
+
+	const renderBarcodeSvgMarkup = (code) => {
+		const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+		try {
+			JsBarcode(svg, code, {
+				format: 'CODE128',
+				width: labelOpts.size === 'a4' ? 1.6 : 1.4,
+				height: labelOpts.size === 'a4' ? 45 : 36,
+				fontSize: 12,
+				margin: 4,
+				displayValue: true,
+			});
+		} catch (_) {
+			return `<span>${code}</span>`;
+		}
+		return svg.outerHTML;
+	};
+
+	const buildLabelHtml = (item) => {
+		const safe = (v) => String(v == null ? '' : v).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+		const name = labelOpts.showName && item.name ? `<div class="lbl-name">${safe(item.name).slice(0, 28)}</div>` : '';
+		const sku = labelOpts.showSku && item.sku ? `<div class="lbl-sku">${safe(item.sku)}</div>` : '';
+		const price = labelOpts.showPrice ? `<div class="lbl-price">₹${Number(item.sale_price || 0).toFixed(2)}</div>` : '';
+		return `<div class="label">${name}<div class="lbl-bc">${renderBarcodeSvgMarkup(item.barcode)}</div>${sku}${price}</div>`;
+	};
+
+	const handlePrintLabels = () => {
+		const copies = Math.max(1, Math.min(200, Number(labelOpts.copies) || 1));
+		const labels = [];
+		labelTargets.forEach((item) => {
+			for (let i = 0; i < copies; i += 1) labels.push(buildLabelHtml(item));
+		});
+		if (labels.length === 0) return;
+
+		const isRoll = labelOpts.size === 'roll';
+		const pageCss = isRoll
+			? `@page { size: 50mm 25mm; margin: 0; }
+			   body { margin: 0; }
+			   .sheet { display: block; }
+			   .label { width: 50mm; height: 25mm; box-sizing: border-box; page-break-after: always; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1mm; }`
+			: `@page { size: A4; margin: 8mm; }
+			   body { margin: 0; }
+			   .sheet { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4mm; }
+			   .label { border: 1px dashed #cbd5e1; box-sizing: border-box; height: 25mm; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 1mm; }`;
+
+		const html = `<!doctype html><html><head><meta charset="utf-8"><title>Barcode Labels</title>
+			<style>
+				* { font-family: Arial, Helvetica, sans-serif; }
+				${pageCss}
+				.lbl-name { font-size: 9px; font-weight: 600; text-align: center; line-height: 1.1; max-width: 100%; overflow: hidden; }
+				.lbl-sku { font-size: 8px; color: #444; }
+				.lbl-price { font-size: 10px; font-weight: 700; }
+				.lbl-bc svg { max-width: 100%; height: auto; }
+				@media screen { body { background: #f3f4f6; padding: 16px; } .sheet { background:#fff; padding:8px; } }
+			</style></head>
+			<body><div class="sheet">${labels.join('')}</div>
+			<script>window.onload = function(){ window.focus(); window.print(); };<\/script>
+			</body></html>`;
+
+		const win = window.open('', '_blank', 'width=900,height=650');
+		if (!win) {
+			setError('Could not open the print window. Please allow pop-ups for this site and try again.');
+			return;
+		}
+		win.document.open();
+		win.document.write(html);
+		win.document.close();
+	};
+
+	// Live preview of the first label inside the modal.
+	useEffect(() => {
+		if (!labelModalOpen || !labelPreviewRef.current || labelTargets.length === 0) return;
+		labelPreviewRef.current.innerHTML = buildLabelHtml(labelTargets[0]);
+	}, [labelModalOpen, labelTargets, labelOpts]);
+
 	return (
 		<DashboardLayout user={user}>
 			<div className="mb-6 flex flex-wrap items-center justify-between gap-3">
@@ -404,6 +532,14 @@ function Items() {
 						{importing ? 'Importing...' : 'Import XLS'}
 					</button>
 					<button
+						onClick={() => openLabelModal(items.filter((it) => selectedIds.has(it.id)))}
+						disabled={selectedIds.size === 0}
+						className="bg-white text-indigo-700 px-4 py-2 rounded-lg text-sm font-semibold border border-indigo-300 hover:bg-indigo-50 transition disabled:opacity-50 disabled:cursor-not-allowed"
+						title="Print barcode labels for selected items"
+					>
+						🏷️ Print Labels{selectedIds.size > 0 ? ` (${selectedIds.size})` : ''}
+					</button>
+					<button
 						onClick={openCreateModal}
 						className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition"
 					>
@@ -418,7 +554,7 @@ function Items() {
 					<input
 						value={query}
 						onChange={(e) => setQuery(e.target.value)}
-						placeholder="Name or SKU"
+						placeholder="Name, SKU or barcode"
 						className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
 					/>
 				</div>
@@ -559,6 +695,15 @@ function Items() {
 						<table className="min-w-full text-sm">
 							<thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
 								<tr>
+									<th className="px-4 py-2 text-left font-medium">
+										<input
+											type="checkbox"
+											checked={allOnPageSelected}
+											onChange={toggleSelectAllOnPage}
+											className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+											title="Select all on this page"
+										/>
+									</th>
 									<th className="px-4 py-2 text-left font-medium">Item</th>
 									<th className="px-4 py-2 text-left font-medium">Category</th>
 									<th className="px-4 py-2 text-left font-medium">Unit</th>
@@ -576,8 +721,19 @@ function Items() {
 									return (
 										<tr key={item.id} className="border-t border-gray-100 hover:bg-gray-50">
 											<td className="px-4 py-3">
+												<input
+													type="checkbox"
+													checked={selectedIds.has(item.id)}
+													onChange={() => toggleSelected(item.id)}
+													className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+												/>
+											</td>
+											<td className="px-4 py-3">
 												<div className="font-medium text-gray-800">{item.name}</div>
 												<div className="text-xs text-gray-400">SKU: {item.sku}</div>
+												{item.barcode && (
+													<div className="text-xs text-gray-400">Barcode: {item.barcode}</div>
+												)}
 											</td>
 											<td className="px-4 py-3 text-gray-600">{item.category || '-'}</td>
 											<td className="px-4 py-3 text-gray-600">{item.unit}</td>
@@ -600,6 +756,7 @@ function Items() {
 											<td className="px-4 py-3 text-right space-x-2">
 												<button onClick={() => openAdjustModal(item)} className="text-amber-600 hover:text-amber-800 text-xs font-semibold">Adjust</button>
 												<button onClick={() => openEditModal(item)} className="text-blue-600 hover:text-blue-800 text-xs font-semibold">Edit</button>
+												<button onClick={() => openLabelModal([item])} className="text-indigo-600 hover:text-indigo-800 text-xs font-semibold">Label</button>
 												<button onClick={() => openDeleteModal(item)} className="text-red-600 hover:text-red-800 text-xs font-semibold">Delete</button>
 											</td>
 										</tr>
@@ -651,6 +808,11 @@ function Items() {
 							<div>
 								<label className="block text-xs text-gray-500 mb-1">SKU <span className="text-red-500">*</span></label>
 								<input value={form.sku} onChange={(e) => handleFormChange('sku', e.target.value)} required placeholder="Example: FMCG-PARLE-100G" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+							</div>
+							<div>
+								<label className="block text-xs text-gray-500 mb-1">Barcode</label>
+								<input value={form.barcode} onChange={(e) => handleFormChange('barcode', e.target.value)} placeholder="Leave blank to auto-generate" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+								<p className="mt-1 text-[11px] text-gray-400">Code128 — auto-generated if left blank.</p>
 							</div>
 							<div>
 								<label className="block text-xs text-gray-500 mb-1">Category</label>
@@ -807,6 +969,81 @@ function Items() {
 									{deleting ? 'Deleting...' : 'Delete Item'}
 								</button>
 							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{labelModalOpen && (
+				<div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+					<div className="bg-white w-full max-w-2xl rounded-xl shadow-lg border border-gray-200 max-h-[90vh] overflow-auto">
+						<div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+							<h3 className="font-semibold text-gray-800">Print Barcode Labels</h3>
+							<button onClick={closeLabelModal} className="text-gray-400 hover:text-gray-700">Close</button>
+						</div>
+						<div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-5">
+							<div className="space-y-4">
+								<div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
+									<p className="font-semibold text-gray-800">{labelTargets.length} item{labelTargets.length === 1 ? '' : 's'} selected</p>
+									<p className="text-gray-500 text-xs mt-0.5 truncate">
+										{labelTargets.map((it) => it.name).slice(0, 4).join(', ')}{labelTargets.length > 4 ? '…' : ''}
+									</p>
+								</div>
+
+								<div>
+									<label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Label Size</label>
+									<select
+										value={labelOpts.size}
+										onChange={(e) => setLabelOpts((p) => ({ ...p, size: e.target.value }))}
+										className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+									>
+										<option value="roll">Label roll (50mm × 25mm, one per label)</option>
+										<option value="a4">A4 sheet (grid of labels)</option>
+									</select>
+								</div>
+
+								<div>
+									<label className="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Copies per item</label>
+									<input
+										type="number"
+										min="1"
+										max="200"
+										value={labelOpts.copies}
+										onChange={(e) => setLabelOpts((p) => ({ ...p, copies: e.target.value }))}
+										className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+									/>
+								</div>
+
+								<div className="space-y-2">
+									<label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">Show On Label</label>
+									<label className="flex items-center gap-2 text-sm text-gray-600">
+										<input type="checkbox" checked={labelOpts.showName} onChange={(e) => setLabelOpts((p) => ({ ...p, showName: e.target.checked }))} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+										Item name
+									</label>
+									<label className="flex items-center gap-2 text-sm text-gray-600">
+										<input type="checkbox" checked={labelOpts.showPrice} onChange={(e) => setLabelOpts((p) => ({ ...p, showPrice: e.target.checked }))} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+										Price <span className="text-[11px] text-gray-400">(changes over time — off by default)</span>
+									</label>
+									<label className="flex items-center gap-2 text-sm text-gray-600">
+										<input type="checkbox" checked={labelOpts.showSku} onChange={(e) => setLabelOpts((p) => ({ ...p, showSku: e.target.checked }))} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+										SKU <span className="text-[11px] text-gray-400">(internal — off by default)</span>
+									</label>
+								</div>
+							</div>
+
+							<div className="space-y-3">
+								<label className="block text-xs font-semibold uppercase tracking-wider text-gray-400">Preview</label>
+								<div className="rounded-lg border border-gray-200 bg-white p-4 flex items-center justify-center min-h-[140px]">
+									<div ref={labelPreviewRef} className="text-center [&_.lbl-name]:text-[11px] [&_.lbl-name]:font-semibold [&_.lbl-sku]:text-[10px] [&_.lbl-sku]:text-gray-500 [&_.lbl-price]:text-xs [&_.lbl-price]:font-bold" />
+								</div>
+								<p className="text-[11px] text-gray-400">
+									The barcode (Code128) and its number always print. Preview shows the first selected item.
+								</p>
+							</div>
+						</div>
+						<div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2">
+							<button type="button" onClick={closeLabelModal} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50">Cancel</button>
+							<button type="button" onClick={handlePrintLabels} className="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">Print</button>
 						</div>
 					</div>
 				</div>
