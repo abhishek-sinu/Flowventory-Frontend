@@ -55,6 +55,7 @@ function Settings() {
     const [savingTax, setSavingTax] = useState(false);
     const [savingUnit, setSavingUnit] = useState(false);
     const [savingBank, setSavingBank] = useState(false);
+    const [uploadingLogo, setUploadingLogo] = useState(false);
 
     useEffect(() => {
         if (token) {
@@ -168,6 +169,35 @@ function Settings() {
             setError(err.message || 'Failed to save company profile');
         } finally {
             setSavingCompany(false);
+        }
+    };
+
+    const handleLogoUpload = async (e) => {
+        const file = e.target.files?.[0];
+        e.target.value = ''; // allow re-selecting the same file
+        if (!file) return;
+
+        setUploadingLogo(true);
+        setError('');
+        setNotice('');
+        try {
+            const formData = new FormData();
+            formData.append('logo', file);
+            const res = await fetch(`${API_URL}/api/settings/company-logo`, {
+                method: 'POST',
+                headers: { ...authHeaders },
+                body: formData,
+            });
+            if (!res.ok) {
+                throw new Error(await readErrorMessage(res, 'Failed to upload logo'));
+            }
+            const data = await res.json();
+            setCompany((p) => ({ ...p, logo_url: data.logo_url }));
+            setNotice('Logo uploaded. Click "Save Company Profile" to apply.');
+        } catch (err) {
+            setError(err.message || 'Failed to upload logo');
+        } finally {
+            setUploadingLogo(false);
         }
     };
 
@@ -405,7 +435,24 @@ function Settings() {
                             <input value={company.city} onChange={(e) => setCompany((p) => ({ ...p, city: e.target.value }))} placeholder="City" className="border border-gray-200 rounded-lg px-3 py-2" />
                             <input value={company.state} onChange={(e) => setCompany((p) => ({ ...p, state: e.target.value }))} placeholder="State" className="border border-gray-200 rounded-lg px-3 py-2" />
                             <input value={company.pincode} onChange={(e) => setCompany((p) => ({ ...p, pincode: e.target.value }))} placeholder="Pincode" className="border border-gray-200 rounded-lg px-3 py-2" />
-                            <input value={company.logo_url} onChange={(e) => setCompany((p) => ({ ...p, logo_url: e.target.value }))} placeholder="Logo URL" className="border border-gray-200 rounded-lg px-3 py-2 md:col-span-3" />
+                            <div className="md:col-span-3 grid grid-cols-1 md:grid-cols-[1fr_auto] gap-3 items-start">
+                                <input value={company.logo_url} onChange={(e) => setCompany((p) => ({ ...p, logo_url: e.target.value }))} placeholder="Logo URL (or upload an image)" className="border border-gray-200 rounded-lg px-3 py-2" />
+                                <label className="inline-flex items-center justify-center bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-indigo-700 transition cursor-pointer whitespace-nowrap">
+                                    {uploadingLogo ? 'Uploading...' : 'Upload Logo'}
+                                    <input type="file" accept="image/png,image/jpeg" onChange={handleLogoUpload} disabled={uploadingLogo} className="hidden" />
+                                </label>
+                            </div>
+                            {company.logo_url ? (
+                                <div className="md:col-span-3 flex items-center gap-3">
+                                    <img
+                                        src={company.logo_url.startsWith('/uploads') ? `${API_URL}${company.logo_url}` : company.logo_url}
+                                        alt="Company logo preview"
+                                        className="h-16 w-auto border border-gray-200 rounded-lg object-contain bg-white p-1"
+                                        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                                    />
+                                    <span className="text-xs text-gray-500">Logo preview (appears on all invoices &amp; PDFs)</span>
+                                </div>
+                            ) : null}
                             <textarea value={company.address} onChange={(e) => setCompany((p) => ({ ...p, address: e.target.value }))} placeholder="Address" className="border border-gray-200 rounded-lg px-3 py-2 md:col-span-3" rows={2} />
                         </div>
                         <div className="mt-3">
