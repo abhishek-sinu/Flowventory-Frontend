@@ -13,6 +13,7 @@ function PurchaseList() {
     const [query, setQuery] = useState('');
     const [status, setStatus] = useState('');
     const [downloadingId, setDownloadingId] = useState(null);
+    const [cancellingId, setCancellingId] = useState(null);
 
     const readErrorMessage = async (res, fallbackMessage) => {
         const contentType = res.headers.get('content-type') || '';
@@ -112,6 +113,33 @@ function PurchaseList() {
             setError(err.message || 'Failed to download PDF');
         } finally {
             setDownloadingId(null);
+        }
+    };
+
+    const handleCancel = async (bill) => {
+        const confirmed = window.confirm(
+            `Cancel purchase bill ${bill.bill_no}?\n\nThis will remove the purchased quantities from stock. This cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        setCancellingId(bill.id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/api/purchases/${bill.id}/cancel`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json') ? await res.json() : null;
+            if (!res.ok) {
+                const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to cancel purchase bill');
+                throw new Error(msg);
+            }
+            await fetchBills();
+        } catch (err) {
+            setError(err.message || 'Failed to cancel purchase bill');
+        } finally {
+            setCancellingId(null);
         }
     };
 
@@ -232,6 +260,15 @@ function PurchaseList() {
                                             >
                                                 {downloadingId === bill.id ? 'Downloading...' : 'PDF'}
                                             </button>
+                                            {String(bill.status) !== 'draft' && String(bill.status) !== 'cancelled' && (
+                                                <button
+                                                    onClick={() => handleCancel(bill)}
+                                                    disabled={cancellingId === bill.id}
+                                                    className="ml-3 text-xs font-semibold text-rose-700 hover:text-rose-900 disabled:opacity-60"
+                                                >
+                                                    {cancellingId === bill.id ? 'Cancelling...' : 'Cancel'}
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

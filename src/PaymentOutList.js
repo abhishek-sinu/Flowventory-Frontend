@@ -12,6 +12,7 @@ function PaymentOutList() {
     const [error, setError] = useState('');
     const [query, setQuery] = useState('');
     const [paymentMode, setPaymentMode] = useState('');
+    const [deletingId, setDeletingId] = useState(null);
 
     const readErrorMessage = async (res, fallbackMessage) => {
         const contentType = res.headers.get('content-type') || '';
@@ -85,6 +86,30 @@ function PaymentOutList() {
     useEffect(() => {
         if (token) fetchPayments();
     }, [token]);
+
+    const handleDelete = async (payment) => {
+        const ok = window.confirm(
+            `Delete payment ${payment.payment_no}? This will reverse the linked bill's paid amount and balance.`
+        );
+        if (!ok) return;
+        setDeletingId(payment.id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/api/payment-out/${payment.id}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const msg = await buildHttpErrorMessage(res, 'Failed to delete payment');
+                throw new Error(msg);
+            }
+            await fetchPayments();
+        } catch (err) {
+            setError(err.message || 'Unable to delete payment');
+        } finally {
+            setDeletingId(null);
+        }
+    };
 
     return (
         <DashboardLayout user={user}>
@@ -171,6 +196,7 @@ function PaymentOutList() {
                                     <th className="px-4 py-2 text-left font-medium">Mode</th>
                                     <th className="px-4 py-2 text-right font-medium">Amount</th>
                                     <th className="px-4 py-2 text-left font-medium">Reference</th>
+                                    <th className="px-4 py-2 text-right font-medium">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -183,6 +209,15 @@ function PaymentOutList() {
                                         <td className="px-4 py-3 text-gray-600 uppercase">{payment.payment_mode}</td>
                                         <td className="px-4 py-3 text-right font-semibold text-rose-700">{Number(payment.amount || 0).toFixed(2)}</td>
                                         <td className="px-4 py-3 text-gray-600">{payment.reference_no || '-'}</td>
+                                        <td className="px-4 py-3 text-right">
+                                            <button
+                                                onClick={() => handleDelete(payment)}
+                                                disabled={deletingId === payment.id}
+                                                className="text-rose-600 hover:text-rose-800 font-semibold text-xs border border-rose-200 rounded-lg px-3 py-1.5 hover:bg-rose-50 transition disabled:opacity-50"
+                                            >
+                                                {deletingId === payment.id ? 'Deleting...' : 'Delete'}
+                                            </button>
+                                        </td>
                                     </tr>
                                 ))}
                             </tbody>

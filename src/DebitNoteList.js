@@ -13,6 +13,7 @@ function DebitNoteList() {
     const [query, setQuery] = useState('');
     const [status, setStatus] = useState('');
     const [downloadingId, setDownloadingId] = useState(null);
+    const [cancellingId, setCancellingId] = useState(null);
 
     const readErrorMessage = async (res, fallbackMessage) => {
         const contentType = res.headers.get('content-type') || '';
@@ -112,6 +113,33 @@ function DebitNoteList() {
             setError(err.message || 'Failed to download PDF');
         } finally {
             setDownloadingId(null);
+        }
+    };
+
+    const handleCancel = async (debitNote) => {
+        const confirmed = window.confirm(
+            `Cancel debit note ${debitNote.bill_no}?\n\nThis will restore the returned quantities back into stock. This cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        setCancellingId(debitNote.id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/api/debit-notes/${debitNote.id}/cancel`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json') ? await res.json() : null;
+            if (!res.ok) {
+                const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to cancel debit note');
+                throw new Error(msg);
+            }
+            await fetchDebitNotes();
+        } catch (err) {
+            setError(err.message || 'Failed to cancel debit note');
+        } finally {
+            setCancellingId(null);
         }
     };
 
@@ -226,6 +254,15 @@ function DebitNoteList() {
                                             >
                                                 {downloadingId === dn.id ? 'Downloading...' : 'PDF'}
                                             </button>
+                                            {String(dn.status) !== 'draft' && String(dn.status) !== 'cancelled' && (
+                                                <button
+                                                    onClick={() => handleCancel(dn)}
+                                                    disabled={cancellingId === dn.id}
+                                                    className="ml-3 text-xs font-semibold text-rose-700 hover:text-rose-900 disabled:opacity-60"
+                                                >
+                                                    {cancellingId === dn.id ? 'Cancelling...' : 'Cancel'}
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}

@@ -13,6 +13,7 @@ function SalesList() {
 	const [query, setQuery] = useState('');
 	const [status, setStatus] = useState('');
 	const [downloadingId, setDownloadingId] = useState(null);
+	const [cancellingId, setCancellingId] = useState(null);
 
 	const readErrorMessage = async (res, fallbackMessage) => {
 		const contentType = res.headers.get('content-type') || '';
@@ -112,6 +113,33 @@ function SalesList() {
 			setError(err.message || 'Failed to download PDF');
 		} finally {
 			setDownloadingId(null);
+		}
+	};
+
+	const handleCancel = async (invoice) => {
+		const confirmed = window.confirm(
+			`Cancel invoice ${invoice.invoice_no}?\n\nThis will restore the sold quantities back to stock. This cannot be undone.`
+		);
+		if (!confirmed) return;
+
+		setCancellingId(invoice.id);
+		setError('');
+		try {
+			const res = await fetch(`${API_URL}/api/sales/${invoice.id}/cancel`, {
+				method: 'POST',
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			const contentType = res.headers.get('content-type') || '';
+			const data = contentType.includes('application/json') ? await res.json() : null;
+			if (!res.ok) {
+				const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to cancel invoice');
+				throw new Error(msg);
+			}
+			await fetchInvoices();
+		} catch (err) {
+			setError(err.message || 'Failed to cancel invoice');
+		} finally {
+			setCancellingId(null);
 		}
 	};
 
@@ -232,6 +260,15 @@ function SalesList() {
 											>
 												{downloadingId === inv.id ? 'Downloading...' : 'PDF'}
 											</button>
+											{String(inv.status) !== 'draft' && String(inv.status) !== 'cancelled' && (
+												<button
+													onClick={() => handleCancel(inv)}
+													disabled={cancellingId === inv.id}
+													className="ml-3 text-xs font-semibold text-rose-700 hover:text-rose-900 disabled:opacity-60"
+												>
+													{cancellingId === inv.id ? 'Cancelling...' : 'Cancel'}
+												</button>
+											)}
 										</td>
 									</tr>
 								))}

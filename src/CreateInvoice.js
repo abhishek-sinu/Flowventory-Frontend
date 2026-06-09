@@ -38,6 +38,7 @@ function CreateInvoice() {
 	const [supplyType, setSupplyType] = useState('intra');
 	const [status, setStatus] = useState('confirmed');
 	const [roundOff, setRoundOff] = useState('0');
+	const [headerDiscount, setHeaderDiscount] = useState('0');
 	const [notes, setNotes] = useState('');
 	const [lines, setLines] = useState([{ ...EMPTY_LINE }]);
 	const [scanCode, setScanCode] = useState('');
@@ -168,6 +169,7 @@ function CreateInvoice() {
 					setPlaceOfSupply(invoice.place_of_supply || '');
 					setStatus(invoice.status || 'draft');
 					setRoundOff(String(invoice.round_off ?? '0'));
+					setHeaderDiscount(String(invoice.header_discount_amount ?? '0'));
 					setNotes(invoice.notes || '');
 
 					const detectedSupplyType = Number(invoice.igst_amount || 0) > 0 ? 'inter' : 'intra';
@@ -213,14 +215,17 @@ function CreateInvoice() {
 		});
 
 		const subtotal = round2(normalized.reduce((sum, n) => sum + n.base, 0));
-		const taxable = round2(normalized.reduce((sum, n) => sum + n.taxable, 0));
+		const lineDiscountTotal = round2(normalized.reduce((sum, n) => sum + n.discount, 0));
+		const taxableBeforeHeader = round2(normalized.reduce((sum, n) => sum + n.taxable, 0));
+		const headerDiscountAmount = round2(Math.max(0, Number(headerDiscount || 0)));
+		const taxable = round2(Math.max(0, taxableBeforeHeader - headerDiscountAmount));
 		const cgst = round2(normalized.reduce((sum, n) => sum + n.cgst, 0));
 		const sgst = round2(normalized.reduce((sum, n) => sum + n.sgst, 0));
 		const igst = round2(normalized.reduce((sum, n) => sum + n.igst, 0));
 		const total = round2(taxable + cgst + sgst + igst + Number(roundOff || 0));
 
-		return { subtotal, taxable, cgst, sgst, igst, total };
-	}, [lines, roundOff, supplyType]);
+		return { subtotal, taxable, cgst, sgst, igst, total, headerDiscountAmount, lineDiscountTotal };
+	}, [lines, roundOff, supplyType, headerDiscount]);
 
 	const handleLineChange = (index, field, value) => {
 		setLines((prev) => {
@@ -423,6 +428,7 @@ function CreateInvoice() {
 				supply_type: supplyType,
 				status,
 				round_off: Number(roundOff || 0),
+				discount_amount: Number(headerDiscount || 0),
 				notes: notes || null,
 				items: lines
 					.filter((line) => line.item_id)
@@ -594,12 +600,17 @@ function CreateInvoice() {
 						<label className="block text-xs text-gray-500 mb-1">Round Off</label>
 						<input type="number" step="0.01" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
 					</div>
+					<div>
+						<label className="block text-xs text-gray-500 mb-1">Additional Discount (₹)</label>
+						<input type="number" step="0.01" min="0" value={headerDiscount} onChange={(e) => setHeaderDiscount(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+					</div>
 					<div className="md:col-span-1">
 						<label className="block text-xs text-gray-500 mb-1">Notes</label>
 						<input value={notes} onChange={(e) => setNotes(e.target.value)} className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
 					</div>
 					<div className="md:col-span-3 grid grid-cols-2 md:grid-cols-6 gap-3 text-sm">
 						<div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"><div className="text-xs text-gray-500">Subtotal</div><div className="font-semibold">{computed.subtotal.toFixed(2)}</div></div>
+						<div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"><div className="text-xs text-gray-500">Discount</div><div className="font-semibold">{(computed.lineDiscountTotal + computed.headerDiscountAmount).toFixed(2)}</div></div>
 						<div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"><div className="text-xs text-gray-500">Taxable</div><div className="font-semibold">{computed.taxable.toFixed(2)}</div></div>
 						<div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"><div className="text-xs text-gray-500">CGST</div><div className="font-semibold">{computed.cgst.toFixed(2)}</div></div>
 						<div className="bg-gray-50 border border-gray-200 rounded-lg px-3 py-2"><div className="text-xs text-gray-500">SGST</div><div className="font-semibold">{computed.sgst.toFixed(2)}</div></div>

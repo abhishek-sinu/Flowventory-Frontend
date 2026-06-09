@@ -123,7 +123,8 @@ function PartyList() {
 		let payables = 0;
 		for (const party of parties) {
 			const bal = Number(party.current_balance || 0);
-			if ((party.balance_nature || '').toLowerCase() === 'payable') {
+			const nature = (party.balance_nature_live || party.balance_nature || '').toLowerCase();
+			if (nature === 'payable') {
 				payables += bal;
 			} else {
 				receivables += bal;
@@ -539,10 +540,10 @@ function PartyList() {
 										</td>
 										<td className="px-4 py-3 text-gray-600">{party.city || '-'}{party.state ? `, ${party.state}` : ''}</td>
 										<td className="px-4 py-3 text-right">
-											<div className={`font-semibold ${party.balance_nature === 'payable' ? 'text-rose-700' : 'text-emerald-700'}`}>
+											<div className={`font-semibold ${(party.balance_nature_live || party.balance_nature) === 'payable' ? 'text-rose-700' : 'text-emerald-700'}`}>
 												{Number(party.current_balance || 0).toFixed(2)}
 											</div>
-											<div className="text-[10px] uppercase text-gray-400 tracking-wider">{party.balance_nature}</div>
+											<div className="text-[10px] uppercase text-gray-400 tracking-wider">{party.balance_nature_live || party.balance_nature}</div>
 										</td>
 										<td className="px-4 py-3">
 											<span className={`inline-flex px-2 py-0.5 rounded-full text-xs font-semibold ${party.is_active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>

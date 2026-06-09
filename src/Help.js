@@ -73,6 +73,61 @@ const WORKFLOW_CHART = `flowchart TD
   classDef report fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
 `;
 
+const LIFECYCLE_CHART = `flowchart TD
+  Draft(["Draft<br/>(editable, no stock move)"]):::draftNode --> Confirm{"Confirm document"}:::decision
+  Confirm --> Stock["Stock moves ONCE<br/>Sale/Debit Note: − stock<br/>Purchase/Credit Note: + stock"]:::move
+  Stock --> Conf["Confirmed"]:::confNode
+
+  Conf --> PayChk{"Record payment?"}:::decision
+  PayChk -- "Part" --> PartPaid["Partially Paid<br/>balance reduces"]:::confNode
+  PayChk -- "Full" --> Paid["Paid<br/>balance = 0"]:::confNode
+  PartPaid --> Paid
+
+  Conf --> CancelChk{"Cancel?"}:::decision
+  PartPaid --> CancelChk
+  Paid --> CancelChk
+  CancelChk -- "Payments exist" --> Blocked["BLOCKED (409)<br/>delete payment first"]:::blockNode
+  CancelChk -- "No payments" --> Cancelled["Cancelled<br/>stock restored<br/>paid &amp; balance zeroed"]:::cancelNode
+
+  classDef draftNode fill:#f1f5f9,stroke:#475569,stroke-width:2px,color:#1e293b,font-weight:bold;
+  classDef confNode fill:#ecfdf5,stroke:#0d9488,stroke-width:1.5px,color:#065f46;
+  classDef cancelNode fill:#fff1f2,stroke:#e11d48,stroke-width:2px,color:#9f1239,font-weight:bold;
+  classDef blockNode fill:#fef2f2,stroke:#b91c1c,stroke-width:1.5px,color:#7f1d1d;
+  classDef move fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81;
+  classDef decision fill:#fffbeb,stroke:#d97706,stroke-width:1.5px,color:#92400e;
+`;
+
+const STOCK_MONEY_CHART = `flowchart LR
+  subgraph Sales["Sales side (sales_invoices)"]
+    direction TB
+    SINV["Sale Invoice (SINV-)"]:::sale --> SINVeff["− Stock &nbsp;|&nbsp; + Receivable"]:::saleEff
+    CN["Credit Note (CN-)"]:::sale --> CNeff["+ Stock &nbsp;|&nbsp; − Receivable"]:::saleEff
+    EST["Estimate (EST-)"]:::neutral --> ESTeff["No stock &nbsp;|&nbsp; No money"]:::neutralEff
+    DC["Delivery Challan (DC-)"]:::neutral --> DCeff["No stock &nbsp;|&nbsp; No money"]:::neutralEff
+  end
+
+  subgraph Purchase["Purchase side (purchase_invoices)"]
+    direction TB
+    PINV["Purchase Bill (PINV-)"]:::buy --> PINVeff["+ Stock &nbsp;|&nbsp; + Payable"]:::buyEff
+    DN["Debit Note (DN-)"]:::buy --> DNeff["− Stock &nbsp;|&nbsp; − Payable"]:::buyEff
+  end
+
+  subgraph Payments["Payments"]
+    direction TB
+    PIN["Payment In (RCPT-)"]:::pay --> PINeff["Reduces receivable<br/>Delete reverses it"]:::payEff
+    POUT["Payment Out (PMT-)"]:::pay --> POUTeff["Reduces payable<br/>Delete reverses it"]:::payEff
+  end
+
+  classDef sale fill:#ecfdf5,stroke:#0d9488,stroke-width:1.5px,color:#065f46;
+  classDef saleEff fill:#f0fdfa,stroke:#14b8a6,stroke-width:1px,color:#0f766e;
+  classDef buy fill:#fff1f2,stroke:#e11d48,stroke-width:1.5px,color:#9f1239;
+  classDef buyEff fill:#fff5f5,stroke:#fb7185,stroke-width:1px,color:#be123c;
+  classDef neutral fill:#f8fafc,stroke:#94a3b8,stroke-width:1.5px,color:#475569;
+  classDef neutralEff fill:#f1f5f9,stroke:#cbd5e1,stroke-width:1px,color:#64748b;
+  classDef pay fill:#eef2ff,stroke:#4f46e5,stroke-width:1.5px,color:#312e81;
+  classDef payEff fill:#f5f3ff,stroke:#a78bfa,stroke-width:1px,color:#5b21b6;
+`;
+
 const BARCODE_CHART = `flowchart TD
   Start(["Start"]):::startNode --> AddItem
 
@@ -231,6 +286,51 @@ function Help() {
 
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           Tip: You don't have to use every step. A simple shop can go straight from Items → Sale Invoice → Payment In. Estimates, challans, and notes are optional based on how you operate.
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="text-base font-semibold text-slate-800">Behind the Scenes — Document Lifecycle</h3>
+          <p className="text-sm text-slate-600 mt-1">Every sale, purchase, and return follows the same safe lifecycle. Stock moves only when a document is confirmed, and cancelling cleanly reverses everything.</p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <MermaidDiagram chart={LIFECYCLE_CHART} />
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-indigo-100 bg-indigo-50 p-3">
+            <h4 className="text-sm font-semibold text-indigo-800">Stock moves once</h4>
+            <p className="text-xs text-indigo-700 mt-1">Drafts never touch stock. Stock changes exactly once when you confirm a document, so re-saving never double-counts.</p>
+          </div>
+          <div className="rounded-xl border border-rose-100 bg-rose-50 p-3">
+            <h4 className="text-sm font-semibold text-rose-800">Cancel reverses everything</h4>
+            <p className="text-xs text-rose-700 mt-1">Cancelling a confirmed document restores its stock and zeroes its paid/balance amounts — but is blocked if payments are still linked.</p>
+          </div>
+          <div className="rounded-xl border border-violet-100 bg-violet-50 p-3">
+            <h4 className="text-sm font-semibold text-violet-800">Payments are reversible</h4>
+            <p className="text-xs text-violet-700 mt-1">Deleting a Payment In/Out rolls the invoice's paid amount, balance, and status back to where they were.</p>
+          </div>
+          <div className="rounded-xl border border-teal-100 bg-teal-50 p-3">
+            <h4 className="text-sm font-semibold text-teal-800">Upfront paid = a payment</h4>
+            <p className="text-xs text-teal-700 mt-1">If you enter a paid amount while creating an invoice, a matching payment receipt is recorded automatically so the ledger always agrees.</p>
+          </div>
+          <div className="rounded-xl border border-amber-100 bg-amber-50 p-3">
+            <h4 className="text-sm font-semibold text-amber-800">Live party balances</h4>
+            <p className="text-xs text-amber-700 mt-1">Receivables and payables are computed live from confirmed documents and payments, so the party list always matches the ledger.</p>
+          </div>
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-3">
+            <h4 className="text-sm font-semibold text-gray-700">Accurate totals</h4>
+            <p className="text-xs text-gray-600 mt-1">Line totals, an optional invoice-wide discount, and rounding are calculated identically on screen and on the saved record.</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <h3 className="text-base font-semibold text-slate-800">How Each Document Affects Stock &amp; Money</h3>
+          <p className="text-sm text-slate-600 mt-1">Several document types share the same underlying records, separated by their number prefix. This is how each one moves your inventory and balances.</p>
+        </div>
+
+        <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+          <MermaidDiagram chart={STOCK_MONEY_CHART} />
         </div>
       </div>
     ),

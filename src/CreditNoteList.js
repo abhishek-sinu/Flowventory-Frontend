@@ -13,6 +13,7 @@ function CreditNoteList() {
     const [query, setQuery] = useState('');
     const [status, setStatus] = useState('');
     const [downloadingId, setDownloadingId] = useState(null);
+    const [cancellingId, setCancellingId] = useState(null);
 
     const readErrorMessage = async (res, fallbackMessage) => {
         const contentType = res.headers.get('content-type') || '';
@@ -112,6 +113,33 @@ function CreditNoteList() {
             setError(err.message || 'Failed to download PDF');
         } finally {
             setDownloadingId(null);
+        }
+    };
+
+    const handleCancel = async (creditNote) => {
+        const confirmed = window.confirm(
+            `Cancel credit note ${creditNote.invoice_no}?\n\nThis will reverse the returned quantities back out of stock. This cannot be undone.`
+        );
+        if (!confirmed) return;
+
+        setCancellingId(creditNote.id);
+        setError('');
+        try {
+            const res = await fetch(`${API_URL}/api/credit-notes/${creditNote.id}/cancel`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json') ? await res.json() : null;
+            if (!res.ok) {
+                const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to cancel credit note');
+                throw new Error(msg);
+            }
+            await fetchCreditNotes();
+        } catch (err) {
+            setError(err.message || 'Failed to cancel credit note');
+        } finally {
+            setCancellingId(null);
         }
     };
 
@@ -226,6 +254,15 @@ function CreditNoteList() {
                                             >
                                                 {downloadingId === cn.id ? 'Downloading...' : 'PDF'}
                                             </button>
+                                            {String(cn.status) !== 'draft' && String(cn.status) !== 'cancelled' && (
+                                                <button
+                                                    onClick={() => handleCancel(cn)}
+                                                    disabled={cancellingId === cn.id}
+                                                    className="ml-3 text-xs font-semibold text-rose-700 hover:text-rose-900 disabled:opacity-60"
+                                                >
+                                                    {cancellingId === cn.id ? 'Cancelling...' : 'Cancel'}
+                                                </button>
+                                            )}
                                         </td>
                                     </tr>
                                 ))}
