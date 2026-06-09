@@ -14,6 +14,7 @@ function DebitNoteList() {
     const [status, setStatus] = useState('');
     const [downloadingId, setDownloadingId] = useState(null);
     const [cancellingId, setCancellingId] = useState(null);
+    const [cancelTarget, setCancelTarget] = useState(null);
 
     const readErrorMessage = async (res, fallbackMessage) => {
         const contentType = res.headers.get('content-type') || '';
@@ -116,11 +117,9 @@ function DebitNoteList() {
         }
     };
 
-    const handleCancel = async (debitNote) => {
-        const confirmed = window.confirm(
-            `Cancel debit note ${debitNote.bill_no}?\n\nThis will restore the returned quantities back into stock. This cannot be undone.`
-        );
-        if (!confirmed) return;
+    const confirmCancel = async () => {
+        const debitNote = cancelTarget;
+        if (!debitNote) return;
 
         setCancellingId(debitNote.id);
         setError('');
@@ -135,6 +134,7 @@ function DebitNoteList() {
                 const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to cancel debit note');
                 throw new Error(msg);
             }
+            setCancelTarget(null);
             await fetchDebitNotes();
         } catch (err) {
             setError(err.message || 'Failed to cancel debit note');
@@ -256,7 +256,7 @@ function DebitNoteList() {
                                             </button>
                                             {String(dn.status) !== 'draft' && String(dn.status) !== 'cancelled' && (
                                                 <button
-                                                    onClick={() => handleCancel(dn)}
+                                                    onClick={() => setCancelTarget(dn)}
                                                     disabled={cancellingId === dn.id}
                                                     className="ml-3 text-xs font-semibold text-rose-700 hover:text-rose-900 disabled:opacity-60"
                                                 >
@@ -271,6 +271,50 @@ function DebitNoteList() {
                     </div>
                 )}
             </div>
+
+            {cancelTarget && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+                    onClick={() => cancellingId ? null : setCancelTarget(null)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden"
+                    >
+                        <div className="p-6">
+                            <div className="flex items-start gap-4">
+                                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                    </svg>
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-base font-semibold text-gray-900">Cancel debit note {cancelTarget.bill_no}?</h3>
+                                    <p className="mt-1.5 text-sm text-gray-500">This will restore the returned quantities back into stock. This action cannot be undone.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 border-t border-gray-100 bg-gray-50 px-6 py-4">
+                            <button
+                                type="button"
+                                onClick={() => setCancelTarget(null)}
+                                disabled={cancellingId === cancelTarget.id}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition disabled:opacity-60"
+                            >
+                                Keep Debit Note
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmCancel}
+                                disabled={cancellingId === cancelTarget.id}
+                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition disabled:opacity-60"
+                            >
+                                {cancellingId === cancelTarget.id ? 'Cancelling...' : 'Yes, Cancel Debit Note'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </DashboardLayout>
     );
 }

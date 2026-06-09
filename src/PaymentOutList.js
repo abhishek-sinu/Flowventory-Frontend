@@ -13,6 +13,7 @@ function PaymentOutList() {
     const [query, setQuery] = useState('');
     const [paymentMode, setPaymentMode] = useState('');
     const [deletingId, setDeletingId] = useState(null);
+    const [deleteTarget, setDeleteTarget] = useState(null);
 
     const readErrorMessage = async (res, fallbackMessage) => {
         const contentType = res.headers.get('content-type') || '';
@@ -87,11 +88,9 @@ function PaymentOutList() {
         if (token) fetchPayments();
     }, [token]);
 
-    const handleDelete = async (payment) => {
-        const ok = window.confirm(
-            `Delete payment ${payment.payment_no}? This will reverse the linked bill's paid amount and balance.`
-        );
-        if (!ok) return;
+    const confirmDelete = async () => {
+        const payment = deleteTarget;
+        if (!payment) return;
         setDeletingId(payment.id);
         setError('');
         try {
@@ -103,6 +102,7 @@ function PaymentOutList() {
                 const msg = await buildHttpErrorMessage(res, 'Failed to delete payment');
                 throw new Error(msg);
             }
+            setDeleteTarget(null);
             await fetchPayments();
         } catch (err) {
             setError(err.message || 'Unable to delete payment');
@@ -211,7 +211,7 @@ function PaymentOutList() {
                                         <td className="px-4 py-3 text-gray-600">{payment.reference_no || '-'}</td>
                                         <td className="px-4 py-3 text-right">
                                             <button
-                                                onClick={() => handleDelete(payment)}
+                                                onClick={() => setDeleteTarget(payment)}
                                                 disabled={deletingId === payment.id}
                                                 className="text-rose-600 hover:text-rose-800 font-semibold text-xs border border-rose-200 rounded-lg px-3 py-1.5 hover:bg-rose-50 transition disabled:opacity-50"
                                             >
@@ -225,6 +225,50 @@ function PaymentOutList() {
                     </div>
                 )}
             </div>
+
+            {deleteTarget && (
+                <div
+                    className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm"
+                    onClick={() => deletingId ? null : setDeleteTarget(null)}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-full max-w-md rounded-2xl bg-white shadow-2xl border border-gray-100 overflow-hidden"
+                    >
+                        <div className="p-6">
+                            <div className="flex items-start gap-4">
+                                <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full bg-rose-100 text-rose-600">
+                                    <svg className="h-6 w-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+                                    </svg>
+                                </div>
+                                <div className="min-w-0">
+                                    <h3 className="text-base font-semibold text-gray-900">Delete payment {deleteTarget.payment_no}?</h3>
+                                    <p className="mt-1.5 text-sm text-gray-500">This will reverse the linked bill's paid amount and balance. This action cannot be undone.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex justify-end gap-2 border-t border-gray-100 bg-gray-50 px-6 py-4">
+                            <button
+                                type="button"
+                                onClick={() => setDeleteTarget(null)}
+                                disabled={deletingId === deleteTarget.id}
+                                className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100 transition disabled:opacity-60"
+                            >
+                                Keep Payment
+                            </button>
+                            <button
+                                type="button"
+                                onClick={confirmDelete}
+                                disabled={deletingId === deleteTarget.id}
+                                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 transition disabled:opacity-60"
+                            >
+                                {deletingId === deleteTarget.id ? 'Deleting...' : 'Yes, Delete Payment'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </DashboardLayout>
     );
 }
