@@ -357,7 +357,7 @@ function PartyList() {
 					<h1 className="text-2xl font-bold text-gray-800">Parties</h1>
 					<p className="text-sm text-gray-500 mt-0.5">Manage customers and suppliers with receivable/payable balances.</p>
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
 					<input
 						ref={fileInputRef}
 						type="file"

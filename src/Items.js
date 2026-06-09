@@ -510,7 +510,7 @@ function Items() {
 					<h1 className="text-2xl font-bold text-gray-800">Items</h1>
 					<p className="text-sm text-gray-500 mt-0.5">Manage inventory, pricing and stock levels.</p>
 				</div>
-				<div className="flex items-center gap-2">
+				<div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
 					<input
 						ref={fileInputRef}
 						type="file"

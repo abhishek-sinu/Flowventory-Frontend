@@ -148,7 +148,8 @@ function Dashboard() {
 						</div>
 						<div className="p-5">
 							{stats?.recentTransactions && stats.recentTransactions.length > 0 ? (
-								<table className="w-full text-sm">
+								<div className="overflow-x-auto">
+								<table className="w-full text-sm min-w-[480px]">
 									<thead>
 										<tr className="text-gray-400 text-xs uppercase tracking-wider border-b border-gray-100">
 											<th className="pb-2 text-left font-medium">Party</th>
@@ -178,6 +179,7 @@ function Dashboard() {
 										))}
 									</tbody>
 								</table>
+								</div>
 							) : (
 								<div className="text-center py-12">
 									<div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">

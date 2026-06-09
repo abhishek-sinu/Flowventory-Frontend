@@ -525,16 +525,16 @@ function CreateInvoice() {
 				</div>
 
 				<div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-					<div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-3">
+					<div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
 						<h2 className="text-sm font-semibold text-gray-700">Line Items</h2>
-						<div className="flex items-center gap-2">
-							<div className="flex items-center gap-2">
+						<div className="flex flex-col gap-2 w-full sm:w-auto sm:flex-row sm:items-center">
+							<div className="flex flex-wrap items-center gap-2">
 								<input
 									value={scanCode}
 									onChange={(e) => { setScanCode(e.target.value); if (scanError) setScanError(''); }}
 									onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleBarcodeScan(e); } }}
 									placeholder="Scan or type barcode, press Enter"
-									className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm w-56 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
+									className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm flex-1 min-w-0 sm:flex-none sm:w-56 focus:ring-2 focus:ring-green-500 focus:border-green-500 outline-none"
 								/>
 								<button type="button" onClick={handleBarcodeScan} disabled={scanning} className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-50">
 									{scanning ? 'Adding…' : 'Add'}
@@ -543,7 +543,7 @@ function CreateInvoice() {
 									📷 Camera
 								</button>
 							</div>
-							<button type="button" onClick={addLine} className="text-sm font-semibold text-green-700 hover:text-green-800">+ Add Line</button>
+							<button type="button" onClick={addLine} className="text-sm font-semibold text-green-700 hover:text-green-800 self-start sm:self-auto">+ Add Line</button>
 						</div>
 					</div>
 					{scanError && (
