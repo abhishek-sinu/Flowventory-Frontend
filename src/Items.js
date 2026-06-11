@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from 'html5-qrcode';
 import DashboardLayout from './DashboardLayout';
 
 // Show whole numbers as-is (e.g. pcs => "10") and only keep decimals
@@ -59,6 +60,12 @@ function Items() {
 	const [labelOpts, setLabelOpts] = useState({ size: 'roll', showName: true, showPrice: false, showSku: false, copies: 1 });
 	const fileInputRef = useRef(null);
 	const labelPreviewRef = useRef(null);
+
+	// Barcode camera scanner (fills the Barcode field in the item form).
+	const [cameraOpen, setCameraOpen] = useState(false);
+	const [cameraError, setCameraError] = useState('');
+	const [cameraStarting, setCameraStarting] = useState(false);
+	const cameraRef = useRef(null);
 
 	const token = localStorage.getItem('token');
 
@@ -146,6 +153,7 @@ function Items() {
 
 	const closeModal = () => {
 		if (saving) return;
+		if (cameraRef.current) stopCamera();
 		setIsModalOpen(false);
 		setEditingItem(null);
 		setForm({ ...EMPTY_FORM });
@@ -154,6 +162,85 @@ function Items() {
 	const handleFormChange = (field, value) => {
 		setForm((prev) => ({ ...prev, [field]: value }));
 	};
+
+	const stopCamera = async () => {
+		const instance = cameraRef.current;
+		cameraRef.current = null;
+		if (instance) {
+			try {
+				await instance.stop();
+			} catch (_) {
+				/* already stopped */
+			}
+			try {
+				instance.clear();
+			} catch (_) {
+				/* ignore */
+			}
+		}
+		setCameraOpen(false);
+		setCameraStarting(false);
+	};
+
+	const handleCameraDetected = (decodedText) => {
+		const code = String(decodedText || '').trim();
+		if (!code) return;
+		setForm((prev) => ({ ...prev, barcode: code }));
+		stopCamera();
+	};
+
+	const openCamera = async () => {
+		setCameraError('');
+		setCameraOpen(true);
+		setCameraStarting(true);
+		// Wait for the modal container to mount before starting the camera.
+		setTimeout(async () => {
+			try {
+				const html5Qrcode = new Html5Qrcode('item-barcode-camera-region', {
+					formatsToSupport: [
+						Html5QrcodeSupportedFormats.CODE_128,
+						Html5QrcodeSupportedFormats.CODE_39,
+						Html5QrcodeSupportedFormats.EAN_13,
+						Html5QrcodeSupportedFormats.EAN_8,
+						Html5QrcodeSupportedFormats.UPC_A,
+						Html5QrcodeSupportedFormats.UPC_E,
+						Html5QrcodeSupportedFormats.QR_CODE,
+					],
+					verbose: false,
+				});
+				cameraRef.current = html5Qrcode;
+				await html5Qrcode.start(
+					{ facingMode: 'environment' },
+					{ fps: 10, qrbox: { width: 250, height: 150 } },
+					handleCameraDetected,
+					() => { /* per-frame decode failures are normal; ignore */ }
+				);
+				setCameraStarting(false);
+			} catch (err) {
+				cameraRef.current = null;
+				setCameraStarting(false);
+				const message = String(err?.message || err || '');
+				if (/NotAllowedError|Permission/i.test(message)) {
+					setCameraError('Camera permission was denied. Please allow camera access and try again.');
+				} else if (/NotFoundError|no camera|Requested device not found/i.test(message)) {
+					setCameraError('No camera was found on this device.');
+				} else if (/secure|https/i.test(message)) {
+					setCameraError('Camera needs a secure (HTTPS) connection. It works on localhost during development.');
+				} else {
+					setCameraError(message || 'Unable to start the camera.');
+				}
+			}
+		}, 150);
+	};
+
+	useEffect(() => {
+		return () => {
+			const instance = cameraRef.current;
+			if (instance) {
+				instance.stop().catch(() => {});
+			}
+		};
+	}, []);
 
 	const handleSave = async (e) => {
 		e.preventDefault();
@@ -820,7 +907,12 @@ function Items() {
 							</div>
 							<div>
 								<label className="block text-xs text-gray-500 mb-1">Barcode</label>
-								<input value={form.barcode} onChange={(e) => handleFormChange('barcode', e.target.value)} placeholder="Leave blank to auto-generate" className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+								<div className="flex items-stretch gap-2">
+									<input value={form.barcode} onChange={(e) => handleFormChange('barcode', e.target.value)} placeholder="Leave blank to auto-generate" className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+									<button type="button" onClick={openCamera} title="Scan barcode with camera" className="shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-sm font-medium hover:bg-indigo-100">
+										<span role="img" aria-label="camera">📷</span> Camera
+									</button>
+								</div>
 								<p className="mt-1 text-[11px] text-gray-400">Code128 — auto-generated if left blank.</p>
 							</div>
 							<div>
@@ -871,6 +963,35 @@ function Items() {
 							</button>
 						</div>
 						</form>
+					</div>
+				</div>
+			)}
+
+			{cameraOpen && (
+				<div className="fixed inset-0 z-[60] bg-black/50 flex items-center justify-center p-4">
+					<div className="bg-white w-full max-w-md rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+						<div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
+							<h3 className="font-semibold text-gray-800">Scan Barcode With Camera</h3>
+							<button type="button" onClick={stopCamera} className="text-gray-400 hover:text-gray-700">Close</button>
+						</div>
+						<div className="p-4 space-y-3">
+							<div className="relative w-full rounded-lg overflow-hidden bg-black/5 min-h-[220px]">
+								{/* This div is owned entirely by html5-qrcode. React must NOT render children inside it. */}
+								<div id="item-barcode-camera-region" className="w-full" />
+								{cameraStarting && (
+									<span className="absolute inset-0 flex items-center justify-center text-sm text-gray-500 pointer-events-none">
+										Starting camera…
+									</span>
+								)}
+							</div>
+							{cameraError && (
+								<div className="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">{cameraError}</div>
+							)}
+							<p className="text-xs text-gray-500">Point the camera at a barcode. The number fills in automatically once detected.</p>
+							<div className="flex justify-end">
+								<button type="button" onClick={stopCamera} className="px-4 py-2 rounded-lg bg-gray-600 text-white text-sm font-semibold hover:bg-gray-700">Cancel</button>
+							</div>
+						</div>
 					</div>
 				</div>
 			)}
