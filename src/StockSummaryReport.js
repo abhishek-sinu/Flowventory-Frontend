@@ -97,6 +97,11 @@ function StockSummaryReport() {
     }, [token]);
 
     const formatAmount = (value) => Number(value || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Whole numbers show without decimals (pcs); fractional units (kg/litre) keep decimals.
+    const formatQty = (value) => {
+        const num = Number(value || 0);
+        return Number.isInteger(num) ? String(num) : parseFloat(num.toFixed(3)).toString();
+    };
 
     return (
         <DashboardLayout user={user}>
@@ -185,7 +190,7 @@ function StockSummaryReport() {
                         </div>
                         <div className="bg-indigo-50 border border-indigo-100 border-t-4 border-t-indigo-500 rounded-xl p-4 shadow-sm">
                             <div className="text-xs text-indigo-700/80 uppercase tracking-wider font-semibold">Total Stock Qty</div>
-                            <div className="text-xl font-bold text-indigo-700 mt-1">{Number(summary?.total_stock_qty || 0).toFixed(3)}</div>
+                            <div className="text-xl font-bold text-indigo-700 mt-1">{formatQty(summary?.total_stock_qty)}</div>
                         </div>
                         <div className="bg-rose-50 border border-rose-100 border-t-4 border-t-rose-500 rounded-xl p-4 shadow-sm">
                             <div className="text-xs text-rose-700/80 uppercase tracking-wider font-semibold">Stock Value (Cost)</div>
@@ -229,9 +234,9 @@ function StockSummaryReport() {
                                                 <td className="px-4 py-3 text-gray-600">{row.sku}</td>
                                                 <td className="px-4 py-3 text-gray-600">{row.category || '-'}</td>
                                                 <td className={`px-4 py-3 text-right font-semibold ${Number(row.low_stock_flag) === 1 ? 'text-amber-700' : 'text-gray-700'}`}>
-                                                    {Number(row.current_stock || 0).toFixed(3)} {row.unit || ''}
+                                                    {formatQty(row.current_stock)} {row.unit || ''}
                                                 </td>
-                                                <td className="px-4 py-3 text-right text-gray-600">{Number(row.low_stock_threshold || 0).toFixed(3)}</td>
+                                                <td className="px-4 py-3 text-right text-gray-600">{formatQty(row.low_stock_threshold)}</td>
                                                 <td className="px-4 py-3 text-right text-rose-700 font-semibold">{formatAmount(row.stock_value_cost)}</td>
                                                 <td className="px-4 py-3 text-right text-green-700 font-semibold">{formatAmount(row.stock_value_sale)}</td>
                                             </tr>

@@ -2,6 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import JsBarcode from 'jsbarcode';
 import DashboardLayout from './DashboardLayout';
 
+// Show whole numbers as-is (e.g. pcs => "10") and only keep decimals
+// when the quantity is actually fractional (e.g. kg/litre => "9.5").
+const formatQty = (value) => {
+	const num = Number(value || 0);
+	if (Number.isInteger(num)) return String(num);
+	return parseFloat(num.toFixed(3)).toString();
+};
+
 const EMPTY_FORM = {
 	name: '',
 	sku: '',
@@ -741,7 +749,7 @@ function Items() {
 											<td className="px-4 py-3 text-right font-medium text-gray-700">{Number(item.purchase_price).toFixed(2)}</td>
 											<td className="px-4 py-3 text-right">
 												<span className={`font-semibold ${isLowStock ? 'text-red-600' : 'text-gray-700'}`}>
-													{Number(item.current_stock).toFixed(3)}
+													{formatQty(item.current_stock)}
 												</span>
 												{isLowStock && (
 													<span className="ml-2 inline-flex px-2 py-0.5 text-[10px] rounded-full bg-red-100 text-red-700 font-semibold">Low</span>
@@ -792,12 +800,13 @@ function Items() {
 
 			{isModalOpen && (
 				<div className="fixed inset-0 z-50 bg-black/30 flex items-center justify-center p-4">
-					<div className="bg-white w-full max-w-3xl rounded-xl shadow-lg border border-gray-200">
-						<div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+					<div className="bg-white w-full max-w-3xl rounded-xl shadow-lg border border-gray-200 flex flex-col max-h-[90vh]">
+						<div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between shrink-0">
 							<h3 className="font-semibold text-gray-800">{editingItem ? 'Edit Item' : 'Add Item'}</h3>
 							<button onClick={closeModal} className="text-gray-400 hover:text-gray-700">Close</button>
 						</div>
-						<form onSubmit={handleSave} className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+						<form onSubmit={handleSave} className="flex flex-col flex-1 min-h-0">
+						<div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-4 overflow-y-auto flex-1 min-h-0">
 							<div className="md:col-span-2 text-xs text-gray-500">
 								<span className="text-red-500 font-semibold">*</span> indicates required fields
 							</div>
@@ -854,12 +863,13 @@ function Items() {
 								<input type="checkbox" checked={form.is_active} onChange={(e) => handleFormChange('is_active', e.target.checked)} className="rounded border-gray-300 text-green-600 focus:ring-green-500" />
 								<span className="text-sm text-gray-600">Active item</span>
 							</div>
-							<div className="md:col-span-2 flex justify-end gap-2 pt-2">
-								<button type="button" onClick={closeModal} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50">Cancel</button>
-								<button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-60">
-									{saving ? 'Saving...' : (editingItem ? 'Update Item' : 'Create Item')}
-								</button>
-							</div>
+						</div>
+						<div className="flex justify-end gap-2 px-5 py-4 border-t border-gray-100 bg-white shrink-0">
+							<button type="button" onClick={closeModal} className="px-4 py-2 rounded-lg border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50">Cancel</button>
+							<button type="submit" disabled={saving} className="px-4 py-2 rounded-lg bg-green-600 text-white text-sm font-semibold hover:bg-green-700 disabled:opacity-60">
+								{saving ? 'Saving...' : (editingItem ? 'Update Item' : 'Create Item')}
+							</button>
+						</div>
 						</form>
 					</div>
 				</div>
@@ -875,7 +885,7 @@ function Items() {
 						<div className="p-5 space-y-4">
 							<div className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm">
 								<p className="font-semibold text-gray-800">{adjustTarget.name}</p>
-								<p className="text-gray-500">Current stock: {Number(adjustTarget.current_stock).toFixed(3)}</p>
+								<p className="text-gray-500">Current stock: {formatQty(adjustTarget.current_stock)}</p>
 							</div>
 							<div className="grid grid-cols-1 md:grid-cols-3 gap-3">
 								<div>
