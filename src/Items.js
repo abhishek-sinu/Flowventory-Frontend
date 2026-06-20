@@ -116,7 +116,7 @@ function Items() {
 
 	useEffect(() => {
 		if (token) fetchItems(1);
-	}, [token, limit, sortBy, sortDir]);
+	}, [token, query, category, onlyLowStock, limit, sortBy, sortDir]);
 
 	const categories = useMemo(() => {
 		const all = items.map((item) => item.category).filter(Boolean);

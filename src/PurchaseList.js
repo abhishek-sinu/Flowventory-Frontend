@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import DashboardLayout from './DashboardLayout';
 
@@ -6,13 +6,21 @@ function PurchaseList() {
     const API_URL = process.env.REACT_APP_API_URL;
     const token = localStorage.getItem('token');
     const navigate = useNavigate();
+    const fileInputRef = useRef(null);
     const [user, setUser] = useState(null);
     const [bills, setBills] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [notice, setNotice] = useState('');
+    const [importing, setImporting] = useState(false);
+    const [importFailures, setImportFailures] = useState([]);
     const [query, setQuery] = useState('');
     const [status, setStatus] = useState('');
     const [downloadingId, setDownloadingId] = useState(null);
+    const [exporting, setExporting] = useState(false);
+    const [page, setPage] = useState(1);
+    const [limit, setLimit] = useState(20);
+    const [pagination, setPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 20 });
     const [cancellingId, setCancellingId] = useState(null);
     const [cancelTarget, setCancelTarget] = useState(null);
 
@@ -60,13 +68,15 @@ function PurchaseList() {
         }
     }, [token]);
 
-    const fetchBills = async () => {
+    const fetchBills = async (nextPage = page, nextLimit = limit) => {
         setLoading(true);
         setError('');
         try {
             const params = new URLSearchParams();
             if (query.trim()) params.set('q', query.trim());
             if (status) params.set('status', status);
+            params.set('page', String(nextPage));
+            params.set('limit', String(nextLimit));
 
             const res = await fetch(`${API_URL}/api/purchases?${params.toString()}`, {
                 headers: { Authorization: `Bearer ${token}` },
@@ -77,7 +87,16 @@ function PurchaseList() {
                 const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to fetch purchase bills');
                 throw new Error(msg);
             }
-            setBills(Array.isArray(data) ? data : []);
+
+            if (Array.isArray(data)) {
+                setBills(data);
+                setPagination({ page: nextPage, totalPages: 1, total: data.length, limit: nextLimit });
+            } else {
+                setBills(Array.isArray(data.data) ? data.data : []);
+                setPagination(data.pagination || { page: nextPage, totalPages: 1, total: 0, limit: nextLimit });
+            }
+            setPage(nextPage);
+            setLimit(nextLimit);
         } catch (err) {
             setError(err.message || 'Unable to load purchase bills');
         } finally {
@@ -86,7 +105,7 @@ function PurchaseList() {
     };
 
     useEffect(() => {
-        if (token) fetchBills();
+        if (token) fetchBills(1, limit);
     }, [token]);
 
     const handleDownloadPdf = async (bill) => {
@@ -114,6 +133,115 @@ function PurchaseList() {
             setError(err.message || 'Failed to download PDF');
         } finally {
             setDownloadingId(null);
+        }
+    };
+
+    const handleDownloadTemplate = async () => {
+        setError('');
+        setNotice('');
+        setImportFailures([]);
+        try {
+            const res = await fetch(`${API_URL}/api/purchases/template`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const msg = await buildHttpErrorMessage(res, 'Failed to download template');
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'purchase_import_template.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            setError(err.message || 'Failed to download template');
+        }
+    };
+
+    const handleExportPurchases = async () => {
+        setExporting(true);
+        setError('');
+        try {
+            const params = new URLSearchParams();
+            if (query.trim()) params.set('q', query.trim());
+            if (status) params.set('status', status);
+
+            const res = await fetch(`${API_URL}/api/purchases/xls?${params.toString()}`, {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+            if (!res.ok) {
+                const msg = await buildHttpErrorMessage(res, 'Failed to export purchases');
+                throw new Error(msg);
+            }
+            const blob = await res.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'purchase_export.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            window.URL.revokeObjectURL(url);
+        } catch (err) {
+            setError(err.message || 'Failed to export purchases');
+        } finally {
+            setExporting(false);
+        }
+    };
+
+    const handleImportClick = () => {
+        setError('');
+        setNotice('');
+        setImportFailures([]);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+            fileInputRef.current.click();
+        }
+    };
+
+    const handleImportFileChange = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        const name = file.name.toLowerCase();
+        if (!name.endsWith('.xls') && !name.endsWith('.xlsx')) {
+            setError('Please select a valid .xls or .xlsx file');
+            return;
+        }
+
+        setImporting(true);
+        setError('');
+        setNotice('');
+        setImportFailures([]);
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const res = await fetch(`${API_URL}/api/purchases/import`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+                body: formData,
+            });
+            const contentType = res.headers.get('content-type') || '';
+            const data = contentType.includes('application/json') ? await res.json() : null;
+            if (!res.ok) {
+                const msg = data?.error ? `${data.error} (HTTP ${res.status})` : await buildHttpErrorMessage(res, 'Failed to import purchase bills');
+                throw new Error(msg);
+            }
+
+            const summary = data?.summary || {};
+            const failedText = summary.failedCount ? `, Failed: ${summary.failedCount}` : '';
+            setNotice(`Import completed. Created: ${summary.created || 0}${failedText}`);
+            setImportFailures(Array.isArray(summary.failed) ? summary.failed : []);
+            await fetchBills();
+        } catch (err) {
+            setError(err.message || 'Failed to import purchase bills');
+        } finally {
+            setImporting(false);
         }
     };
 
@@ -150,13 +278,69 @@ function PurchaseList() {
                     <h1 className="text-2xl font-bold text-gray-800">Purchase Bills</h1>
                     <p className="text-sm text-gray-500 mt-0.5">Create and manage supplier purchase bills.</p>
                 </div>
-                <button
-                    onClick={() => navigate('/purchases/create')}
-                    className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition"
-                >
-                    + Record Purchase
-                </button>
+                <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                    <button
+                        onClick={handleDownloadTemplate}
+                        className="bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
+                    >
+                        Download Template
+                    </button>
+                    <button
+                        onClick={handleExportPurchases}
+                        disabled={exporting}
+                        className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-blue-700 transition disabled:opacity-60"
+                    >
+                        {exporting ? 'Exporting...' : 'Export Purchases'}
+                    </button>
+                    <label
+                        htmlFor="purchase-import-file"
+                        className="inline-flex items-center justify-center bg-amber-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-amber-700 transition cursor-pointer disabled:opacity-60"
+                        aria-disabled={importing}
+                    >
+                        {importing ? 'Importing...' : 'Import Purchases'}
+                    </label>
+                    <button
+                        onClick={() => navigate('/purchases/create')}
+                        className="bg-green-600 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-green-700 transition"
+                    >
+                        + Record Purchase
+                    </button>
+                </div>
             </div>
+            <input
+                id="purchase-import-file"
+                ref={fileInputRef}
+                type="file"
+                accept=".xls,.xlsx"
+                style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px', opacity: 0 }}
+                onChange={handleImportFileChange}
+            />
+
+            {notice && (
+                <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 px-4 py-3 text-sm">
+                    {notice}
+                </div>
+            )}
+
+            {importFailures.length > 0 && (
+                <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="font-semibold">Failed import rows</div>
+                        <div className="text-xs font-medium text-amber-800">{importFailures.length} rows</div>
+                    </div>
+                    <div className="space-y-2">
+                        {importFailures.slice(0, 5).map((failure, index) => (
+                            <div key={index} className="rounded-lg bg-amber-100 px-3 py-2">
+                                <div className="font-medium">Row {failure.row}{failure.bill_no ? ` (${failure.bill_no})` : ''}</div>
+                                <div>{failure.reason}</div>
+                            </div>
+                        ))}
+                        {importFailures.length > 5 && (
+                            <div className="text-xs text-amber-800">And {importFailures.length - 5} more rows failed. Fix these rows and re-import the file.</div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             <div className="bg-gradient-to-br from-white via-indigo-50/50 to-white rounded-xl border border-indigo-100 shadow-sm p-4 mb-4 flex flex-wrap gap-3 items-end">
                 <div className="min-w-[220px] flex-1">
@@ -184,7 +368,7 @@ function PurchaseList() {
                     </select>
                 </div>
                 <button
-                    onClick={fetchBills}
+                    onClick={() => fetchBills(1, limit)}
                     className="bg-gray-800 text-white px-4 py-2 rounded-lg text-sm font-semibold hover:bg-black transition"
                 >
                     Apply Filters
@@ -193,7 +377,8 @@ function PurchaseList() {
                     onClick={() => {
                         setQuery('');
                         setStatus('');
-                        fetchBills();
+                        setPage(1);
+                        fetchBills(1, limit);
                     }}
                     className="bg-white text-gray-700 px-4 py-2 rounded-lg text-sm font-semibold border border-gray-300 hover:bg-gray-50 transition"
                 >
@@ -206,9 +391,28 @@ function PurchaseList() {
             )}
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <div className="px-4 py-3 border-b border-gray-100 flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
                     <h2 className="text-sm font-semibold text-gray-700">Purchase Bills</h2>
-                    <span className="text-xs text-gray-400">{bills.length} records</span>
+                    <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+                        <span>{pagination.total} records</span>
+                        <label className="flex items-center gap-2">
+                            <span>Page</span>
+                            <select
+                                value={limit}
+                                onChange={(e) => {
+                                    const nextLimit = Number(e.target.value) || 20;
+                                    setPage(1);
+                                    fetchBills(1, nextLimit);
+                                }}
+                                className="border border-gray-200 rounded-lg px-2 py-1 bg-white text-xs"
+                            >
+                                <option value={10}>10</option>
+                                <option value={20}>20</option>
+                                <option value={50}>50</option>
+                                <option value={100}>100</option>
+                            </select>
+                        </label>
+                    </div>
                 </div>
 
                 {loading ? (
@@ -216,8 +420,9 @@ function PurchaseList() {
                 ) : bills.length === 0 ? (
                     <div className="py-16 text-center text-gray-400">No purchase bills found.</div>
                 ) : (
-                    <div className="overflow-auto">
-                        <table className="min-w-full text-sm">
+                    <div>
+                        <div className="overflow-auto">
+                            <table className="min-w-full text-sm">
                             <thead className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider">
                                 <tr>
                                     <th className="px-4 py-2 text-left font-medium">Bill</th>
@@ -275,7 +480,31 @@ function PurchaseList() {
                             </tbody>
                         </table>
                     </div>
+                </div>
                 )}
+                <div className="px-4 py-3 border-t border-gray-100 bg-gray-50 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs text-gray-500">
+                        Page {pagination.page} of {pagination.totalPages}
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => fetchBills(Math.max(1, pagination.page - 1), limit)}
+                            disabled={pagination.page <= 1 || loading}
+                            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                        >
+                            Previous
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => fetchBills(Math.min(pagination.totalPages || 1, pagination.page + 1), limit)}
+                            disabled={pagination.page >= (pagination.totalPages || 1) || loading}
+                            className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-100 disabled:opacity-50"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
             </div>
 
             {cancelTarget && (
